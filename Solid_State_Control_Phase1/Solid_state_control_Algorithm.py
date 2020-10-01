@@ -1,11 +1,12 @@
-from ast import literal_eval
 import regex as re
-from crccheck.crc import Crc16, CrcModbus
+from crccheck.crc import CrcModbus
 from crccheck.checksum import Checksum16
 
 
 #Used for receive frame testing for data frame type 87
-eight_seven_string_hex = 'AF FA 02 87 03 FF 03 01 B1 AA 0D 0A'
+eight_seven_string_hex = 'AF FA 02 87 03 FF 03 01 14 84 0D 0A'
+#Used to test crc testing for data frame type 83
+eight_three_string_hex = 'A5 5A 02 83 0A 01 04 92 E5 0D 0A'
 #Used for receive frame testing for data frame type 87
 eight_seven_string_binary = '10101111111110100000001010000111000000111111111100000011' \
                             '0000000110110001101010100000110100001010'
@@ -13,9 +14,11 @@ dataframe = []
 #print(eight_seven_string_hex_convert)
 eight_five_string_hex = 'AF FA 02 85 19 01 04 81 01 19 01 45 00 9A 00 9A ' \
                         '5F B4 02 A0 00 64 00 0A 03 56 00 0A 00 0C CRC 0D 0A'
-eight_seven_string_hex2 = 'AF FA 02 87 03 FF 03 01'
+
+
+
 def main():
-    crc_code_check()
+
     user_frame = input("Would you like to receive or send frames?: Enter 1 for receive (0x85 and 0x87) or Enter 2 for"
                        " send frames (0x83 or 0x84)\n")
     if user_frame == ('1'):
@@ -28,15 +31,45 @@ def main():
         print("I'm sorry, but you did not enter a valid input. Please enter either 1 or 2.")
 #bin_to_dec function converts binary values into hexidecmial values
 
-def crc_code_check():
+
+def make_crc(send_data):
     #Quick calculation
-    my_hex_test = eight_seven_string_hex2.replace(" ", "")
-    print(my_hex_test)
-    data = bytearray.fromhex(my_hex_test)
-    crc = Crc16.calc(data)
-    print('Crc is ', crc)
-    checksum = Checksum16.calc(data)
-    print('Checksum is', checksum)
+    my_hex_data = list_to_str(send_data)
+    #Convert hexidecimal string to bytes
+    data = bytearray.fromhex(my_hex_data)
+    #calculate checksum
+    crc = CrcModbus.calchex(data).upper()
+    checksum = Checksum16.calchex(data)
+    print("Crc is ", crc)
+    print("Checksum is ", checksum)
+    #Convert hexidecimal to hexidecimal
+    #Make the crc a string
+    print(crc)
+    #Separate the crc into two sets of two
+    string_check = re.findall('..', crc)
+    #Basically, the crc created has to be flipped so that when the crc is recieved, the remainder is zero. Hence a
+    # crc of "E5 92" calculated above needs to be stored as "92 E5" in the string so that if the crc is calculated again
+    # with "92 E5" appended at the end, the crc checksum will equal zero.
+    string_check = list(reversed(string_check))
+    #concert the list to string
+    string_check = list_to_str(string_check)
+    return string_check
+
+def check_crc(recieve_data):
+    #Quick calculation
+    # using len() + list slicing
+    # remove last K elements
+    K = 2
+    #Cut off the end frame hexidecimal values before division
+    no_end_data = recieve_data[: len(recieve_data) - K]
+    print(no_end_data)
+    my_hex_data = list_to_str(no_end_data)
+    print(my_hex_data)
+    data = bytearray.fromhex(my_hex_data)
+    crc = CrcModbus.calchex(data).upper()
+    print("Crc checksum is ", crc)
+    return crc
+
 def bin_to_hex(binary_num):
     # Converting binary to initial hexidecimal string
     hex_convert = hex(int(binary_num, 2))
@@ -77,6 +110,11 @@ def recieve_frames():
     #Separating the string values into a list by spaces
 
     recieve_list = eight_seven_string_hex.split(" ")
+    crc_status = check_crc(recieve_list)
+    if crc_status == "0000":
+        print("No errors occurred during data transmission.")
+    else:
+        print("Errors occurred during data transmission. Crc checksum not equal to zero.")
     #recieve_list = eight_seven_string_hex.split(" ")
     #store the frame header data from the string
     header = recieve_list[0] + " " + recieve_list[1]
@@ -440,8 +478,8 @@ def set_frames():
             else:
                 print('Error, frequency input is outside range (1-160).')
         # CRC check code
-        CRC = 'B1 AA'
-        dataframe.append(CRC)
+        crc = make_crc(dataframe)
+        dataframe.append(crc)
         frame_end = '0D 0A'
         dataframe.append(frame_end)
     else:
@@ -456,7 +494,5 @@ if __name__ == '__main__':
 
 
 
-#For instruction send frame type 0x83.when the user needs to set the power source, this must be 0x83;
-# after sending the control instruction， there is one return confirmation message for lower-end computer(下位机)，
-# refer to serial return instruction frame structure“Serial port return instruction frame structure”
+
 
