@@ -1,12 +1,17 @@
+import serial
+import time
+
 import regex as re
-from crccheck.crc import CrcModbus
 from crccheck.checksum import Checksum16
+from crccheck.crc import CrcModbus
+
+#ser = serial.Serial(port = '/dev/ttyAMA0', baudrate = 115200, parity = serial.PARITY_NONE, stopbits = serial.STOPBITS_ONE,
+                    #bytesize = serial.eightbits, timeout =1)
 
 
 #Used for receive frame testing for data frame type 87
 eight_seven_string_hex = 'AF FA 02 87 03 FF 03 01 14 84 0D 0A'
-#Used to test crc testing for data frame type 83
-eight_three_string_hex = 'A5 5A 02 83 0A 01 04 92 E5 0D 0A'
+eight_five_string_hex = 'A5 FA 02 84 02 01 02'
 #Used for receive frame testing for data frame type 87
 eight_seven_string_binary = '10101111111110100000001010000111000000111111111100000011' \
                             '0000000110110001101010100000110100001010'
@@ -15,9 +20,15 @@ dataframe = []
 eight_five_string_hex = 'AF FA 02 85 19 01 04 81 01 19 01 45 00 9A 00 9A ' \
                         '5F B4 02 A0 00 64 00 0A 03 56 00 0A 00 0C CRC 0D 0A'
 
-
+test_freq = 2456.2
+step = 1
+test_hex = 24500
 
 def main():
+    #test_crc = make_crc(eight_five_string_hex)
+    #print(test_crc)
+    #Serial=serial.Serial('COM3',115200, timeout=1)
+
 
     user_frame = input("Would you like to receive or send frames?: Enter 1 for receive (0x85 and 0x87) or Enter 2 for"
                        " send frames (0x83 or 0x84)\n")
@@ -26,10 +37,19 @@ def main():
 
     elif user_frame == ('2'):
         set_frames()
-        print(list_to_str(dataframe))
+        hex_code = list_to_str(dataframe)
+        list_final = Convert(hex_code)
+        print(list_final)
+        for i in list_final:
+            i = bytes.fromhex(i)
+            print(i)
+
+            #Serial.write(hex_code)
+
+            #x = Serial.readline()
+            #print(x)
     else:
         print("I'm sorry, but you did not enter a valid input. Please enter either 1 or 2.")
-#bin_to_dec function converts binary values into hexidecmial values
 
 
 def make_crc(send_data):
@@ -94,8 +114,14 @@ def hex_to_dec(hexidecimal):
 def dec_to_hex(decimal):
     # Converting decimal to initial hexidecimal string
     hex_convert = hex(int(decimal))
+    print(hex_convert)
     # removing initial '0x' in string and changing all letters to capital letters for code logic
     hex_convert = hex_convert[2:].upper()
+    print(hex_convert)
+
+    if len(hex_convert) % 2 != 0:
+        hex_convert = '0' + hex_convert
+    print(hex_convert)
     # Separating the string values into a list by spaces
     hex_list = re.findall('..', hex_convert)
     return hex_list
@@ -103,6 +129,37 @@ def list_to_str(datalist):
     datastring = ' '.join([str(elem) for elem in datalist])
     datastring = str(datastring)
     return datastring
+
+
+#This function handles user input for values with step sizes
+def step_size_calc(step_size, min_num, max_num, val_type, unit):
+    user_val= float(input('Set the working %s value. Range of values are %.1f to %.1f MHz with step size of %.1f %s\n'
+                          % (val_type, min_num, max_num, step_size, unit)))
+    # Divide the value the user inputed by the step size
+    divided_val = user_val / step_size
+    # Round the divided value to the nearest whole number
+    rounded_val = round(divided_val)
+    # Multiple the rounded value times the step size to get the actual value that will be sent to the generator
+    sent_value = rounded_val * step_size
+
+    if max_num >= sent_value >= min_num:
+        authorize_step = input(
+        "This function has a step size of " + str(step_size) + ". The value you entered was " + str(user_val) + " . " 
+        "The nearest value to the number you inputed is %.1f. Do you want this value sent to the generator? Enter 0 \
+        if yes, enter 1 to enter a different value\n" % (sent_value))
+        if authorize_step == "0":
+            send_content = dec_to_hex(sent_value * 10)
+            send_content = ' '.join(map(str, send_content))
+            dataframe.append(send_content)
+        else:
+            step_size_calc(step_size, min_num, max_num, val_type, unit)
+
+    else:
+        print('Error, %s input is outside range (%.1f-%.1f).' %(val_type, min_num,max_num))
+        exit()
+def Convert(string):
+    li = list(string.split(" "))
+    return li
 #Return/recieve instruction frame is composed of 6 data blaock as shown in Table below.
 # All serial instruction or data use hexadecimal(HEX) format, data use高字节先传送（MSB）format.
 # For example, when send 0x1234, it will send 0x12 first and then 0x34.
@@ -246,7 +303,7 @@ def set_frames():
     # 84 is the request frame. To ensure the successful communication without losing data, this communication protocol
     # uses single communication initialization “This agreement uses unilateral communication”，which means all
     # communication will start from upper-end computer. The request frame includes the request working data and working
-    # status from the upper-end computer. The return content can referrer to serial return instruction frame structure.
+    # status from the upper-end computer. The return content can refer to serial return instruction frame structure.
 
     if send_frame_type == '84':
         #Print which frame we are in
@@ -258,23 +315,23 @@ def set_frames():
         send_control = input('Which control type would you like to set/request data too for the 0x84 dataframe?\n'
                              'Enter 02 to request channel working status. Enter FF to request access to an address.\n')
         dataframe.append(send_control)
-        send_length = 1
+        send_length = '01'
         dataframe.append(send_length)
         #If we want to request channel working status, do the following
         if send_control == '02':
             #Requesting corresponding channel '0x06'. Can be from '0x01 to 0x06'
-            send_content = '06'
+            send_content = input('Input the channel you want the working status of. Values can be in between 01 and 06.\n')
             dataframe.append(send_content)
             print('Corresponding channel is ', send_content)
         #If we want to request access to a address
         elif send_control == 'FF':
             #Set address you want to read from (0x01-0xFF)
-            send_content = '01'
+            send_content = input('Input the address you want access to. Values can be in between 01 and FF.\n')
             dataframe.append(send_content)
             print('Corresponding address to request to read from is ', send_content)
         #CRC check code
-        CRC = 'B1 AA'
-        dataframe.append(CRC)
+        crc = make_crc(dataframe)
+        dataframe.append(crc)
         frame_end = '0D 0A'
         dataframe.append(frame_end)
     # Instruction send frame is 83. when the user needs to set the power source, this must be 0x83; after sending the
@@ -356,15 +413,17 @@ def set_frames():
             # Control corresponding channel '0x01-0x06'
             send_channel = input('What channel do you want to set the power value (from 0x01-0x06)')
             dataframe.append(send_channel)
-            # Power adjustment value. Step size 1 W. Range: 1-160 W
-            power = float(input('Set the power adjustment value. Range of values are 1-160 (W) with step size of 1 W.\n'
-                          'For example, entering 100 means 100 Watts.'))
-            if (160 >= power >= 1):
-                send_content = dec_to_hex(power)
-                send_content = ' '.join(map(str, send_content))
-                dataframe.append(send_content)
-            else:
-                print('Error, power input is outside range (1-160).')
+            # What are we sending
+            value_sent = 'power'
+            #Step size of 1 W
+            step = 1
+            #Step size unit
+            unit = 'W'
+            #maximum value
+            max_val = 160
+            #minimum value
+            min_val = 1
+            step_size_calc(step, min_val, max_val, value_sent, unit)
 
         #If we want to adjust the phase of the wave
         elif send_control == '06':
@@ -374,16 +433,17 @@ def set_frames():
             # Control corresponding channel '0x01-0x06'
             send_channel = input('What channel do you want to set the phase value (from 0x01-0x06)')
             dataframe.append(send_channel)
-            # Phase value. Step size 5.6 degrees. Range: 0-360 degrees
-            phase = float(input('Set the phase value. Range of values are 0-360 degrees with step size of 5.6 degrees\n'
-                          'For example, entering 22.4 means 22.4 degrees'))
-            print('Phase is type ', type(phase))
-            if (360 >= phase >= 0):
-                send_content = dec_to_hex(phase*10)
-                send_content = ' '.join(map(str, send_content))
-                dataframe.append(send_content)
-            else:
-                print('Error, power input is outside range (1-160).')
+            # What are we sending
+            value_sent = 'phase'
+            # Step size of 5.6 degrees
+            step = 5.6
+            #Step size unit
+            unit = 'degrees'
+            # maximum value
+            max_val = 360
+            # minimum value
+            min_val = 0
+            step_size_calc(step, min_val, max_val, value_sent, unit)
 
         #If we want to set the warning switch status
         elif send_control == '09':
@@ -469,14 +529,17 @@ def set_frames():
             # Control corresponding channel '0x01-0x06'
             send_channel = input('What channel do you want to set the frequency value (from 0x01-0x06)')
             dataframe.append(send_channel)
-            frequency = float(input('Set the working frequency value. Range of values are 2450 to 2500 MHz with step size of 1 MHz\n'
-                'For example, entering 2450.0 means 2450 MHzs'))
-            if (2500 >= frequency >= 2450):
-                send_content = dec_to_hex(frequency * 10)
-                send_content = ' '.join(map(str,send_content))
-                dataframe.append(send_content)
-            else:
-                print('Error, frequency input is outside range (1-160).')
+            #What are we sending
+            value_sent = 'frequency'
+            #Step size of 1 MHz
+            step = 1
+            #Unit of step size
+            unit = 'MHz'
+            # maximum value
+            max_val = 2500
+            # minimum value
+            min_val = 2450
+            step_size_calc(step, min_val, max_val, value_sent, unit)
         # CRC check code
         crc = make_crc(dataframe)
         dataframe.append(crc)
@@ -487,6 +550,9 @@ def set_frames():
 
 if __name__ == '__main__':
     main()
+
+
+
 
 
 
